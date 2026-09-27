@@ -1,0 +1,348 @@
+// MediLog NG — Firestore Rules (Spark plan: no Cloud Functions).
+//
+// READ MODEL (accepted MVP risk, see docs/upgrade-functions.md P0-1):
+//   Any signed-in user (any hospital) may READ clinical docs. Provenance
+//   (organization_id) is preserved on every doc; reads remain auditable.
+// WRITE MODEL:
+//   Writes stay least-privilege: caller's membership doc ({orgId}_{uid}) must
+//   carry the capability. Roles are capabilities[] arrays set by admins;
+//   bootstrap super-admins via console-created platform_admins/{uid} docs.
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function uid() { return request.auth.uid; }
+    function isSuper() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/platform_admins/$(request.auth.uid));
+    }
+    function myMship(orgId) {
+      return get(/databases/$(database)/documents/organization_memberships/$(orgId + '_' + request.auth.uid)).data;
+    }
+    function hasCap(orgId, cap) {
+      return signedIn() && (isSuper() || (
+        myMship(orgId).status == 'active'
+        && (cap in myMship(orgId).capabilities || '*' in myMship(orgId).capabilities)
+      ));
+    }
+    function sameOrgCreate() {
+      return signedIn()
+        && request.resource.data.organization_id is string
+        && hasCap(request.resource.data.organization_id, 'patient.create');
+    }
+
+    match /platform_admins/{id} {
+      allow read, write: if false;
+    }
+    match /organizations/{orgId} {
+      allow read: if signedIn();
+      // New hospitals activate immediately: the creator may create with
+      // status 'active' (created_by must be themselves). Anything else
+      // stays 'pending'. Joins can never self-activate (see below).
+      allow create: if signedIn()
+        && request.resource.data.name is string
+        && request.resource.data.status in ['pending', 'active']
+        && (request.resource.data.status == 'pending'
+          || request.resource.data.created_by == uid());
+      allow update: if signedIn()
+        && (isSuper() || hasCap(orgId, 'admin.roles.manage'));
+      allow delete: if false;
+    }
+    match /organization_memberships/{mship} {
+      allow read: if signedIn() && (
+        resource.data.user_id == uid()
+        || myMship(resource.data.organization_id).status == 'active'
+        || isSuper()
+      );
+      // Self-registration: deterministic id, own uid. Joining an existing
+      // hospital is always 'pending'. Only the creator of a brand-new
+      // organization (organizations/{orgId}.created_by == self) may create
+      // their founding membership as 'active' — a new hospital is live
+      // immediately, nobody can self-activate into someone else's hospital.
+      allow create: if signedIn()
+        && mship == request.resource.data.organization_id + '_' + uid()
+        && request.resource.data.user_id == uid()
+        && request.resource.data.status in ['pending', 'active']
+        && (request.resource.data.status == 'pending'
+          || get(/databases/$(database)/documents/organizations/$(request.resource.data.organization_id)).data.created_by == uid());
+      allow update: if signedIn() && (
+        // Admin path: full member management (role/capabilities/status).
+        // An admin can NEVER change their own role/capabilities/status —
+        // only the other admin can (prevents self-demotion lockouts and
+        // self-promotion). Own-flag clears use the self paths below.
+        ((isSuper() || (hasCap(resource.data.organization_id, 'admin.roles.manage')
+          && (mship != resource.data.organization_id + '_' + uid()
+            || request.resource.data.diff(resource.data).changedKeys().hasOnly(['updated_at']))))
+          && request.resource.data.status in ['pending', 'active', 'rejected', 'suspended'])
+        // Self path: a member may only clear their own must_change_password
+        // flag after changing password — nothing else may change.
+        || (mship == resource.data.organization_id + '_' + uid()
+          && resource.data.user_id == uid()
+          && request.resource.data.diff(resource.data).changedKeys().hasOnly(['must_change_password'])
+          && resource.data.must_change_password == true
+          && request.resource.data.must_change_password == false)
+        // Self path: a member may only clear their own
+        // email_verification_required flag once Firebase Auth confirms the
+        // email is verified — nothing else may change.
+        || (mship == resource.data.organization_id + '_' + uid()
+          && resource.data.user_id == uid()
+          && request.resource.data.diff(resource.data).changedKeys().hasOnly(['email_verification_required'])
+          && request.auth.token.email_verified == true
+          && request.resource.data.email_verification_required == false)
+      );
+      allow delete: if false;
+    }
+    // Staff invites: admin pre-approves (email + role); the invitee sets
+    // their own password at signup and claims the invite by matching email.
+    // No backend, no Admin SDK — Spark compatible.
+    match /staff_invites/{inviteId} {
+      allow read: if signedIn() && (isSuper()
+        || hasCap(resource.data.organization_id, 'admin.roles.manage')
+        || request.auth.token.email == resource.data.email);
+      allow create: if signedIn()
+        && hasCap(request.resource.data.organization_id, 'admin.roles.manage')
+        && request.resource.data.email is string
+        && request.resource.data.role is string
+        && request.resource.data.status == 'pending';
+      allow update: if signedIn() && (
+        (isSuper() || hasCap(resource.data.organization_id, 'admin.roles.manage'))
+        // Invitee accepts their own pending invite — status only.
+        || (request.auth.token.email == resource.data.email
+          && resource.data.status == 'pending'
+          && request.resource.data.diff(resource.data).changedKeys().hasOnly(['status'])
+          && request.resource.data.status == 'accepted')
+      );
+      allow delete: if false;
+    }
+    match /roles/{roleId} {
+      allow read: if signedIn();
+      allow write: if isSuper();
+    }
+    // Canonical registry: open reads; guarded merges (never un-merge via client).
+    match /patients/{pid} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.surname is string
+        && request.resource.data.status == 'active';
+      allow update: if signedIn()
+        && !(resource.data.status == 'merged_into' && request.resource.data.merged_into != resource.data.merged_into);
+      allow delete: if false;
+    }
+    match /patient_identifiers/{id} {
+      allow read, write: if false;
+    }
+    match /organization_patients/{id} {
+      allow read: if signedIn();
+      allow create: if hasCap(request.resource.data.organization_id, 'patient.create');
+      allow update: if hasCap(resource.data.organization_id, 'patient.demographics.update');
+      allow delete: if false;
+    }
+    match /patient_consents/{id} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.resource.data.patient_id is string;
+      allow update, delete: if false;
+    }
+    match /patient_merge_requests/{id} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.resource.data.status == 'pending';
+      allow update: if signedIn();
+      allow delete: if false;
+    }
+    match /patient_merge_history/{id} {
+      allow read: if signedIn();
+      allow create: if signedIn();
+      allow update, delete: if false;
+    }
+    match /patient_identity_conflicts/{id} {
+      allow read: if signedIn();
+      allow create: if signedIn();
+      allow update: if signedIn();
+      allow delete: if false;
+    }
+    match /patient_portal_links/{id} {
+      allow read: if signedIn() && (resource.data.user_id == uid() || isSuper());
+      allow create: if signedIn() && request.resource.data.user_id == uid();
+      allow update, delete: if false;
+    }
+    // Clinical aggregates (children embedded — see docs/embedded-model.md).
+    match /encounters/{id} {
+      allow read: if signedIn();
+      allow create: if hasCap(request.resource.data.organization_id, 'encounter.create');
+      allow update: if hasCap(resource.data.organization_id, 'encounter.edit');
+      allow delete: if false;
+    }
+    match /vitals/{id} {
+      allow read: if signedIn();
+      allow create: if hasCap(request.resource.data.organization_id, 'vitals.create');
+      allow update: if hasCap(resource.data.organization_id, 'vitals.create');
+      allow delete: if false;
+    }
+    match /allergies/{id} {
+      allow read: if signedIn();
+      allow create: if hasCap(request.resource.data.organization_id, 'diagnosis.create');
+      allow update: if hasCap(resource.data.organization_id, 'diagnosis.create');
+      allow delete: if false;
+    }
+    match /diagnoses/{id} {
+      allow read: if signedIn();
+      allow create: if hasCap(request.resource.data.organization_id, 'diagnosis.create');
+      allow update: if hasCap(resource.data.organization_id, 'diagnosis.create');
+      allow delete: if false;
+    }
+    match /clinical_notes/{id} {
+      allow read: if signedIn();
+      allow create: if hasCap(request.resource.data.organization_id, 'encounter.create');
+      allow update: if hasCap(resource.data.organization_id, 'encounter.edit');
+      allow delete: if false;
+    }
+    match /medication_requests/{id} {
+      allow read: if signedIn();
+      allow create: if hasCap(request.resource.data.organization_id, 'prescription.create');
+      allow update: if hasCap(resource.data.organization_id, 'prescription.create');
+      allow delete: if false;
+    }
+    match /dispensations/{id} {
+      allow read: if signedIn();
+      allow create: if hasCap(request.resource.data.organization_id, 'prescription.dispense');
+      allow update: if false;
+      allow delete: if false;
+    }
+    match /stock_lots/{id} {
+      allow read: if signedIn();
+      allow create: if hasCap(request.resource.data.organization_id, 'prescription.dispense');
+      allow update: if hasCap(resource.data.organization_id, 'prescription.dispense');
+      allow delete: if false;
+    }
+    match /stock_movements/{id} {
+      allow read: if signedIn();
+      allow create: if hasCap(request.resource.data.organization_id, 'prescription.dispense');
+      allow update, delete: if false;
+    }
+    match /lab_orders/{id} {
+      allow read: if signedIn();
+      allow create: if hasCap(request.resource.data.organization_id, 'lab.order');
+      allow update: if signedIn()
+        && (hasCap(resource.data.organization_id, 'lab.order')
+          || hasCap(resource.data.organization_id, 'lab.result.verify'));
+      allow delete: if false;
+    }
+    match /lab_results/{id} {
+      allow read: if signedIn();
+      allow create: if hasCap(request.resource.data.organization_id, 'lab.result.enter');
+      allow update: if hasCap(resource.data.organization_id, 'lab.result.verify');
+      allow delete: if false;
+    }
+    match /admissions/{id} {
+      allow read: if signedIn();
+      allow create: if hasCap(request.resource.data.organization_id, 'beds.manage');
+      allow update: if hasCap(resource.data.organization_id, 'beds.manage');
+      allow delete: if false;
+    }
+    match /beds/{id} {
+      allow read: if signedIn();
+      allow write: if hasCap(request.resource.data.organization_id, 'beds.manage');
+    }
+    match /wards/{id} {
+      allow read: if signedIn();
+      allow write: if hasCap(request.resource.data.organization_id, 'beds.manage');
+    }
+    match /rooms/{id} {
+      allow read: if signedIn();
+      allow write: if hasCap(request.resource.data.organization_id, 'beds.manage');
+    }
+    match /bed_allocations/{id} {
+      allow read: if signedIn();
+      allow create: if hasCap(request.resource.data.organization_id, 'beds.manage');
+      allow update, delete: if false;
+    }
+    match /appointments/{id} {
+      allow read: if signedIn();
+      allow create: if hasCap(request.resource.data.organization_id, 'appointment.create');
+      allow update: if hasCap(resource.data.organization_id, 'appointment.create');
+      allow delete: if false;
+    }
+    match /invoices/{id} {
+      allow read: if signedIn();
+      allow create: if hasCap(request.resource.data.organization_id, 'billing.invoice');
+      allow update: if hasCap(resource.data.organization_id, 'billing.invoice');
+      allow delete: if false;
+    }
+    match /payments/{id} {
+      allow read: if signedIn();
+      allow create: if hasCap(request.resource.data.organization_id, 'billing.payment')
+        && request.resource.data.amount_kobo is int
+        && request.resource.data.amount_kobo > 0;
+      allow update: if false;
+      allow delete: if false;
+    }
+    match /documents/{id} {
+      allow read: if signedIn();
+      allow create: if hasCap(request.resource.data.organization_id, 'documents.upload');
+      allow update: if hasCap(resource.data.organization_id, 'documents.upload');
+      allow delete: if false;
+    }
+    // Global payer master list (NOT org-scoped — every hospital shares it, which
+    // is why reads are just signedIn()). Writes carry organization_id as
+    // provenance, so the author must hold billing.invoice there. create/update
+    // read request.resource; delete must read `resource` because request.resource
+    // does not exist on a delete.
+    match /payers/{id} {
+      allow read: if signedIn();
+      allow create, update: if hasCap(request.resource.data.organization_id, 'billing.invoice');
+      allow delete: if hasCap(resource.data.organization_id, 'billing.invoice');
+    }
+    match /plans/{id} {
+      allow read: if signedIn();
+      allow write: if hasCap(request.resource.data.organization_id, 'billing.invoice');
+    }
+    match /coverages/{id} {
+      allow read: if signedIn();
+      allow write: if hasCap(request.resource.data.organization_id, 'billing.invoice');
+    }
+    match /claims/{id} {
+      allow read: if signedIn();
+      allow create: if hasCap(request.resource.data.organization_id, 'billing.invoice');
+      allow update: if hasCap(resource.data.organization_id, 'billing.invoice');
+      allow delete: if false;
+    }
+    match /audit_events/{id} {
+      allow create: if signedIn() && request.resource.data.actor_user_id == uid();
+      allow read: if signedIn();
+      allow update, delete: if false;
+    }
+    match /sync_cursors/{deviceId} {
+      allow read, write: if signedIn();
+    }
+    // Devices are org-scoped. Admin-only control (option A): only holders
+    // of admin.devices.manage / admin.roles.manage (or super) can see or
+    // revoke other people's devices. Owners may register/heartbeat their own
+    // device but can never change its status. Blocking a person is done by
+    // suspending their membership — a suspended member's device is useless.
+    match /devices/{deviceId} {
+      allow read: if signedIn() && (resource.data.user_id == uid() || isSuper()
+        || (resource.data.organization_id is string
+          && (hasCap(resource.data.organization_id, 'admin.devices.manage')
+            || hasCap(resource.data.organization_id, 'admin.roles.manage'))));
+      allow create: if signedIn() && request.resource.data.user_id == uid();
+      allow update: if signedIn() && (
+        (resource.data.organization_id is string
+          && (hasCap(resource.data.organization_id, 'admin.devices.manage')
+            || hasCap(resource.data.organization_id, 'admin.roles.manage')))
+        || (resource.data.user_id == uid()
+          && request.resource.data.user_id == uid()
+          && request.resource.data.status == resource.data.status)
+      );
+      allow delete: if false;
+    }
+    match /terminologies/{system}/{code} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+    match /notifications_inbox/{id} {
+      allow read: if signedIn() && resource.data.recipient_user_id == uid();
+      allow create: if signedIn();
+      allow update: if signedIn() && resource.data.recipient_user_id == uid();
+      allow delete: if false;
+    }
+  }
+}

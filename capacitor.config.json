@@ -1,0 +1,6 @@
+{
+  "appId": "com.medilogng.app",
+  "appName": "MediLog NG",
+  "webDir": "dist",
+  "server": { "androidScheme": "https" }
+}

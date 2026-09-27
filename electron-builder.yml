@@ -1,0 +1,43 @@
+appId: com.medilogng.app
+productName: MediLog NG
+copyright: Copyright (c) Imradex Global
+artifactName: MediLogNG-Setup-${version}.${ext}
+
+directories:
+  output: release
+  buildResources: public
+
+asar: true
+
+files:
+  - dist/**/*
+  - electron/**/*
+  - package.json
+  - '!node_modules/@capacitor/android/**/*'
+  - '!node_modules/@capacitor/cli/**/*'
+  - '!node_modules/firebase-admin/**/*'
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  publisherName: Imradex Global
+  requestedExecutionLevel: asInvoker
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  allowElevation: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: MediLog NG
+  menuCategory: Imradex Global
+  deleteAppDataOnUninstall: true
+  differentialPackage: true
+
+publish:
+  provider: github
+  owner: adebowaleabdulwasiu00
+  repo: medilogng
+  channel: latest

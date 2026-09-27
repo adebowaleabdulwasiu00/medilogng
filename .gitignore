@@ -1,0 +1,13 @@
+node_modules/
+dist/
+release/
+android/
+ios/
+.env.local
+.env
+*.log
+*.err
+new 1.txt
+.firebase/
+.DS_Store
+Thumbs.db
