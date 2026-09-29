@@ -21,7 +21,6 @@ import { ReportsView } from './views/ReportsView.js'
 import { AdminView } from './views/AdminView.js'
 import { VerifyEmailView } from './views/VerifyEmailView.js'
 import { ChangePasswordView } from './views/ChangePasswordView.js'
-import { initUpdater } from './components/updater.js'
 
 registerRoute('/login', LoginView, { guest: true })
 registerRoute('/register', RegisterView, { guest: true })
@@ -62,5 +61,4 @@ authStore.subscribe((s) => {
 initRouter()
 initAuthListener()
 startAccessWatch()
-initUpdater()
 handleRoute()

@@ -215,6 +215,42 @@ a { color: var(--primary); }
   outline: none !important; background: #fff !important;
 }
 .fn-mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9rem; }
+.fn-pw-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+.fn-pw-wrap .fn-input,
+.fn-pw-wrap .input {
+  width: 100%;
+  padding-right: 44px !important;
+}
+.fn-pw-toggle {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  padding: 6px;
+  cursor: pointer;
+  color: #64748b;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  transition: color 0.15s ease, background 0.15s ease;
+  z-index: 2;
+}
+.fn-pw-toggle:hover {
+  color: #0f172a;
+  background: rgba(0, 0, 0, 0.06);
+}
+.fn-pw-toggle:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
 .fn-note {
   background: #f1f5f9; border: 1px solid var(--border); color: #475569;
   border-radius: 10px; padding: 9px 12px; font-size: 0.85rem; margin: 10px 0 0;

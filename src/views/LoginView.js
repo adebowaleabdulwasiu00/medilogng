@@ -3,6 +3,7 @@ import { authStore } from '../store/authStore.js'
 import { navigate } from '../router.js'
 import { esc } from '../utils/sanitize.js'
 import { validateRegistration, validateOrg, ORG_TYPES, JOIN_ROLES, normalizeOrgId } from '../features/orgs/domain.js'
+import { openModal, closeModal } from '../components/shell.js'
 
 // Unified auth screen, inspired by https://app.fundednext.com/login.
 // Single page, three inline modes — Log in / Create / Join — no page flip.
@@ -68,7 +69,8 @@ export async function LoginView(app, params = {}) {
           '<p class="fn-trust">Trusted by care teams across Nigeria</p></div>' +
         '</div>' +
       '</div>' +
-    '</div>'
+    '</div>' +
+    '<div id="modal" class="modal" hidden><div class="modal-card"><div class="modal-head"><h3 id="modalTitle"></h3><button class="iconbtn" data-close>✕</button></div><div id="modalBody" class="modal-body"></div></div></div>'
 
   const pane = document.getElementById('fnPane')
   const errBox = () => document.getElementById('err')
@@ -147,6 +149,28 @@ export async function LoginView(app, params = {}) {
     if (b) b.onclick = () => setMode('login')
   }
 
+  const EYE_ICON = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>'
+  const EYE_OFF_ICON = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" x2="22" y1="2" y2="22"/></svg>'
+
+  function pwToggleHtml(toggleId) {
+    return '<button type="button" id="' + toggleId + '" class="fn-pw-toggle" aria-label="Show password" title="Show password">' +
+      EYE_ICON + '</button>'
+  }
+
+  function wirePwToggle(toggleId, inputId) {
+    const btn = document.getElementById(toggleId)
+    const input = document.getElementById(inputId)
+    if (!btn || !input) return
+    btn.onclick = (e) => {
+      e.preventDefault()
+      const isPw = input.type === 'password'
+      input.type = isPw ? 'text' : 'password'
+      btn.innerHTML = isPw ? EYE_OFF_ICON : EYE_ICON
+      btn.setAttribute('aria-label', isPw ? 'Hide password' : 'Show password')
+      btn.setAttribute('title', isPw ? 'Hide password' : 'Show password')
+    }
+  }
+
   // ---------- LOGIN ----------
   function renderLogin() {
     pane.innerHTML =
@@ -155,14 +179,17 @@ export async function LoginView(app, params = {}) {
       '<input id="em" class="input fn-input" type="email" autocomplete="username" placeholder="you@hospital.ng" />' +
       '<div class="fn-label-row"><label class="fn-label" for="pw">Password</label>' +
       '<button id="forgotLink" class="fn-linkbtn fn-forgot">Forgot password?</button></div>' +
-      '<input id="pw" class="input fn-input" type="password" autocomplete="current-password" placeholder="Enter your password" />' +
+      '<div class="fn-pw-wrap"><input id="pw" class="input fn-input" type="password" autocomplete="current-password" placeholder="Enter your password" />' +
+      pwToggleHtml('togglePw') + '</div>' +
       '<p id="forgotNote" class="fn-note" hidden>Password reset is coming soon — please contact your hospital admin.</p>' +
       '<button id="b1" class="fn-primary">Log in</button>' +
       '<div class="fn-or"><span></span><em>Or</em><span></span></div>' +
       '<button id="b2" class="fn-google">' +
         '<svg width="18" height="18" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.1H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3l5.7-5.7C34.3 6.1 29.4 4 24 4 13 4 4 13 4 24s9 20 20 20 20-9 20-20c0-1.3-.1-2.6-.4-3.9z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.9 1.2 8 3l5.7-5.7C34.3 6.1 29.4 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.1H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C41 35.4 44 30.2 44 24c0-1.3-.1-2.6-.4-3.9z"/></svg>' +
-        ' Continue with Google</button>'
+        ' Continue with Google</button>' +
+      '<button id="bDemo" type="button" class="btn btn-ghost" style="width:100%;margin-top:10px;padding:9px 12px;font-size:0.88rem;color:var(--primary);font-weight:700;border:1px dashed var(--primary);border-radius:10px;cursor:pointer">⚡ Instant Demo Sign-In (Dr. Adebowale)</button>'
     wireSubLinks()
+    wirePwToggle('togglePw', 'pw')
     document.getElementById('forgotLink').onclick = () => {
       document.getElementById('forgotNote').hidden = false
     }
@@ -211,6 +238,14 @@ export async function LoginView(app, params = {}) {
         busy(false)
       }
     }
+    const demoBtn = document.getElementById('bDemo')
+    if (demoBtn) {
+      demoBtn.onclick = () => {
+        document.getElementById('em').value = 'doctor@hospital.ng'
+        document.getElementById('pw').value = 'password123'
+        doLogin()
+      }
+    }
   }
 
   // ---------- shared account fields ----------
@@ -220,9 +255,11 @@ export async function LoginView(app, params = {}) {
       '<div><label class="fn-label" for="em2">Email</label>' +
       '<input id="em2" class="input fn-input" type="email" autocomplete="username" placeholder="you@hospital.ng" /></div></div>' +
       '<div class="grid2"><div><label class="fn-label" for="pw2">Password (min 8)</label>' +
-      '<input id="pw2" class="input fn-input" type="password" autocomplete="new-password" placeholder="••••••••" /></div>' +
+      '<div class="fn-pw-wrap"><input id="pw2" class="input fn-input" type="password" autocomplete="new-password" placeholder="••••••••" />' +
+      pwToggleHtml('togglePw2') + '</div></div>' +
       '<div><label class="fn-label" for="pc">Confirm password</label>' +
-      '<input id="pc" class="input fn-input" type="password" autocomplete="new-password" placeholder="••••••••" /></div></div>'
+      '<div class="fn-pw-wrap"><input id="pc" class="input fn-input" type="password" autocomplete="new-password" placeholder="••••••••" />' +
+      pwToggleHtml('togglePc') + '</div></div></div>'
   }
   function setBusy(on, btnId, idleText, busyText) {
     const btn = document.getElementById(btnId)
@@ -244,6 +281,8 @@ export async function LoginView(app, params = {}) {
       '<button id="go" class="fn-primary">Create hospital →</button>' +
       '<div id="msg"></div>'
     wireSubLinks()
+    wirePwToggle('togglePw2', 'pw2')
+    wirePwToggle('togglePc', 'pc')
     document.getElementById('go').onclick = async () => {
       const msg = document.getElementById('msg')
       const v = {
@@ -295,6 +334,8 @@ export async function LoginView(app, params = {}) {
       '<button id="go" class="fn-primary">Request access →</button>' +
       '<div id="msg"></div>'
     // fix: only one back-login id exists here; wire create too
+    wirePwToggle('togglePw2', 'pw2')
+    wirePwToggle('togglePc', 'pc')
     const c = document.getElementById('linkCreate')
     if (c) c.onclick = () => setMode('create')
     const b = document.getElementById('linkBackLogin')

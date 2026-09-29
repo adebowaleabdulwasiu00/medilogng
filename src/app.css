@@ -178,24 +178,6 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: .86rem; backgroun
   .wardgrid { grid-template-columns: 1fr; }
   .kv { grid-template-columns: repeat(2, 1fr); }
 }
-/* ---- auto-update banner + version pill -------------------------------------- */
-#update-banner { position: fixed; bottom: 18px; right: 18px; z-index: 120; display: flex; gap: 12px; align-items: center; max-width: 420px; background: #fff; border: 1px solid var(--emr-line); border-left: 5px solid var(--emr-teal); border-radius: 14px; padding: 12px 14px; box-shadow: 0 16px 40px rgba(11,27,43,.22); }
-#update-banner[hidden] { display: none; }
-#update-banner[data-tone="warn"] { border-left-color: var(--emr-warn); }
-#update-banner[data-tone="info"] { border-left-color: var(--emr-info); }
-#update-banner[data-tone="ok"] { border-left-color: var(--emr-ok); }
-#update-banner[data-tone="bad"] { border-left-color: var(--emr-bad); }
-#update-banner .upd-icon { width: 36px; height: 36px; border-radius: 10px; background: #f1f5f9; display: grid; place-items: center; font-size: 1.1rem; flex: none; }
-#update-banner .upd-body { flex: 1; min-width: 0; }
-#update-banner .upd-body strong { display: block; font-size: .88rem; }
-#update-banner .upd-sub { display: block; font-size: .76rem; color: var(--emr-muted); margin-top: 2px; }
-#update-banner .upd-actions { display: flex; gap: 6px; flex: none; }
-#update-banner .upd-bar { height: 7px; border-radius: 99px; background: #e2e8f0; margin-top: 8px; overflow: hidden; }
-#update-banner .upd-bar[hidden] { display: none; }
-#update-banner .upd-fill { height: 100%; width: 0; border-radius: 99px; background: linear-gradient(90deg, var(--emr-teal), #2dd4bf); transition: width .25s ease; }
-#upd-pill { position: fixed; bottom: 14px; left: 14px; z-index: 110; border: 1px solid var(--emr-line); background: rgba(255,255,255,.92); color: var(--emr-muted); border-radius: 999px; padding: 4px 12px; font-size: .72rem; font-weight: 700; cursor: pointer; }
-#upd-pill:hover { color: var(--emr-ink); border-color: var(--emr-teal); }
-
 @media (max-width: 860px) {
   .emr { grid-template-columns: 1fr; }
   .side { position: fixed; z-index: 50; width: 262px; transform: translateX(-105%); transition: transform .2s; }

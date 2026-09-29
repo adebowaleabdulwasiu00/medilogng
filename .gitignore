@@ -11,3 +11,4 @@ new 1.txt
 .firebase/
 .DS_Store
 Thumbs.db
+bun.lock

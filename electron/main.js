@@ -2,8 +2,6 @@ const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 let autoUpdater = null;
-let updateAvailable = false;
-let updateProgress = 0;
 try {
   ({ autoUpdater } = require('electron-updater'));
 } catch (e) {
@@ -106,140 +104,17 @@ app.whenReady().then(() => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.reload();
   });
 
-  // Auto-update IPC handlers
-  ipcMain.handle('auto-check-updates', async () => {
-    if (!autoUpdater) return { error: 'autoUpdater not available' };
-    try {
-      // Manual flow: check only, UI decides when to download.
-      await autoUpdater.checkForUpdates();
-      return { success: true };
-    } catch (e) {
-      return { error: e.message };
-    }
-  });
-
-  ipcMain.handle('auto-download-update', async () => {
-    if (!autoUpdater) return { error: 'autoUpdater not available' };
-    try {
-      await autoUpdater.downloadUpdate();
-      return { success: true };
-    } catch (e) {
-      return { error: e.message };
-    }
-  });
-
-  ipcMain.handle('auto-quit-install', () => {
-    if (!autoUpdater) return { error: 'autoUpdater not available' };
-    try {
-      autoUpdater.quitAndInstall(false, true);
-      return { success: true };
-    } catch (e) {
-      return { error: e.message };
-    }
-  });
-
-  ipcMain.handle('auto-get-status', () => {
-    if (!autoUpdater) return { error: 'autoUpdater not available' };
-    return {
-      updateAvailable,
-      updateProgress,
-    };
-  });
-
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 
-// Auto-update (GitHub releases) — manual download flow so the renderer can
-// show progress + an "Update now" button. Listeners are registered BEFORE
-// the first check so no event is missed.
+  // Auto-update (GitHub releases) — silent check, user prompted on download.
   try {
     if (autoUpdater && !START_URL) {
-      autoUpdater.autoDownload = false;
-      autoUpdater.autoInstallOnAppQuit = true;
-
-      autoUpdater.on('checking-for-update', () => {
-        updateAvailable = false;
-        updateProgress = 0;
-        mainWindow?.webContents.send('auto-update-status', { checking: true, progress: 0, available: false });
-      });
-
-      autoUpdater.on('update-available', (info) => {
-        updateAvailable = true;
-        updateProgress = 0;
-        mainWindow?.webContents.send('auto-update-status', {
-          checking: false,
-          progress: 0,
-          available: true,
-          version: info?.version,
-          releaseNotes: info?.releaseNotes,
-        });
-      });
-
-      autoUpdater.on('update-not-available', (info) => {
-        updateAvailable = false;
-        updateProgress = 0;
-        mainWindow?.webContents.send('auto-update-status', {
-          checking: false,
-          progress: 0,
-          available: false,
-          version: info?.version,
-        });
-      });
-
-      autoUpdater.on('download-progress', (progressObj) => {
-        updateProgress = Math.round(progressObj?.percent || 0);
-        mainWindow?.webContents.send('auto-update-status', {
-          checking: false,
-          downloading: true,
-          progress: updateProgress,
-          available: updateAvailable,
-          bytesPerSecond: progressObj?.bytesPerSecond || 0,
-          transferred: progressObj?.transferred || 0,
-          total: progressObj?.total || 0,
-        });
-      });
-
-      // electron-updater <6 emits `progress`, >=6 emits `download-progress`. Keep both.
-      autoUpdater.on('progress', (progressObj) => {
-        updateProgress = Math.round(progressObj?.percent || 0);
-        mainWindow?.webContents.send('auto-update-status', {
-          checking: false,
-          downloading: true,
-          progress: updateProgress,
-          available: updateAvailable,
-        });
-      });
-
-      autoUpdater.on('update-downloaded', (info) => {
-        updateAvailable = true;
-        updateProgress = 100;
-        mainWindow?.webContents.send('auto-update-status', {
-          checking: false,
-          progress: 100,
-          available: true,
-          ready: true,
-          version: info?.version,
-          releaseNotes: info?.releaseNotes,
-        });
-      });
-
-      autoUpdater.on('error', (err) => {
-        mainWindow?.webContents.send('auto-update-status', {
-          checking: false,
-          progress: updateProgress,
-          available: updateAvailable,
-          error: (err && err.message) || String(err),
-        });
-      });
-
-      // Give the window a moment to load before checking, so the banner exists.
-      setTimeout(() => {
-        autoUpdater.checkForUpdates().catch(() => {});
-      }, 3000);
+      autoUpdater.checkForUpdatesAndNotify().catch(() => {});
     }
   } catch (e) {}
-);
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
