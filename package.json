@@ -1,8 +1,7 @@
 {
   "name": "medilogng",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
-  
   "main": "electron/main.js",
   "author": "Imradex Global",
   "description": "MediLog NG — EMR for Nigerian hospitals (offline-first web + Android + Electron desktop)",

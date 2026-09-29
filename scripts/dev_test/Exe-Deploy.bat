@@ -2,10 +2,10 @@
 setlocal EnableDelayedExpansion
 title EXE Deploy - MediLog NG
 echo ==========================================
-echo  MediLog NG - EXE DEPLOY (clean rebuild + GitHub^)
-echo  Usage: Exe-Deploy.bat [patch^|minor^|major]
-echo         No arg = same version, fresh EXE.
-echo  Installed apps auto-update from GitHub.
+echo  MediLog NG - EXE BUILD LOCAL (no upload^)
+echo  Usage: Exe-Deploy.bat [1^|2^|3^|patch^|minor^|major]
+echo         No arg = ask interactively. Press Enter = same version, fresh EXE.
+echo  Builds release\ exe locally only. Upload to GitHub manually to release.
 echo ==========================================
 echo.
 
@@ -18,11 +18,33 @@ set /p DONE=Press Enter to close...
     exit /b 1
 )
 
-:: Optional version bump
+:: Optional version bump - command-line arg or interactive prompt
+:: Usage: Exe-Deploy.bat [1^|2^|3^|patch^|minor^|major]  (no arg = prompt)
 set BUMP=
-if /I "%~1"=="patch" set BUMP=patch
-if /I "%~1"=="minor" set BUMP=minor
-if /I "%~1"=="major" set BUMP=major
+if not "%~1"=="" (
+    if /I "%~1"=="1" set BUMP=patch
+    if /I "%~1"=="patch" set BUMP=patch
+    if /I "%~1"=="2" set BUMP=minor
+    if /I "%~1"=="minor" set BUMP=minor
+    if /I "%~1"=="3" set BUMP=major
+    if /I "%~1"=="major" set BUMP=major
+    if defined BUMP echo [1/5] Version bump from command line: %BUMP%
+)
+if not defined BUMP (
+    if not "%~1"=="" (
+        echo [WARN] Unknown arg "%~1" - expected 1/2/3 or patch/minor/major.
+    )
+    echo.
+    echo [1/5] Choose version bump:
+    echo   1 = patch (e.g. 0.1.0 → 0.1.1)
+    echo   2 = minor (e.g. 0.1.0 → 0.2.0)
+    echo   3 = major (e.g. 0.1.0 → 1.0.0)
+    echo   Press Enter = fresh EXE, same version
+    set /p CHOICE=Enter choice (1/2/3):
+    if /I "!CHOICE!"=="1" set BUMP=patch
+    if /I "!CHOICE!"=="2" set BUMP=minor
+    if /I "!CHOICE!"=="3" set BUMP=major
+)
 if defined BUMP (
     echo [1/5] Bumping version: %BUMP%...
     call node scripts/bump-version.mjs %BUMP%
@@ -77,46 +99,34 @@ echo Window stays open so you can copy. Press Enter when done...
 set /p DONE=Press Enter to close...
     exit /b 1
 )
-echo [OK] dist\ cleared, build stamped. Rebuilding inside publish step...
+echo [OK] dist\ cleared, build stamped. Rebuilding inside build step...
 
-echo [4/5] Rebuilding + publishing to GitHub...
-echo (npm run build runs first inside publish:desktop - always fresh.^)
-if not defined GH_TOKEN (
-    echo [ERROR] GH_TOKEN is not set.
-    echo Create token (classic, 'repo' scope^), then:
-    echo   set GH_TOKEN=your_token_here
-echo Window stays open so you can copy. Press Enter when done...
-set /p DONE=Press Enter to close...
-    exit /b 1
-)
-call npm run publish:desktop
+echo [4/5] Building EXE locally (no GitHub upload^)...
+echo (npm run dist:win = vite build + electron-builder --publish never^)
+call npm run dist:win
 if errorlevel 1 (
-    echo [ERROR] EXE publish failed. Retry on network errors.
+    echo [ERROR] EXE build failed. Retry on errors above.
 echo Window stays open so you can copy. Press Enter when done...
 set /p DONE=Press Enter to close...
     exit /b 1
 )
 if not exist "dist\index.html" (
-    echo [WARNING] dist\index.html missing after publish - check build output above.
+    echo [WARNING] dist\index.html missing after build - check build output above.
 )
 
 echo [5/5] Done.
 echo.
 echo ==========================================
-echo  SUCCESS! EXE v%VER% published to GitHub.
-echo  Installed apps update on restart (delta^).
+echo  SUCCESS! EXE v%VER% built locally - NOT uploaded.
+echo  File: release\MediLogNG-Setup-%VER%.exe
 echo.
-echo  Link for download page:
-echo    https://github.com/adebowaleabdulwasiu00/medilogng/releases/download/v%VER%/MediLogNG-Setup-%VER%.exe
-echo.
-echo  The link was also copied to your clipboard and saved to:
-echo    exe-link-v%VER%.txt
+echo  To release manually: GitHub repo ^> Releases ^> Draft new
+echo   release ^> tag v%VER% ^> attach from release\:
+echo    MediLogNG-Setup-%VER%.exe + .blockmap + latest.yml
 echo ==========================================
-echo https://github.com/adebowaleabdulwasiu00/medilogng/releases/download/v%VER%/MediLogNG-Setup-%VER%.exe | clip
-echo https://github.com/adebowaleabdulwasiu00/medilogng/releases/download/v%VER%/MediLogNG-Setup-%VER%.exe > "exe-link-v%VER%.txt"
-echo [OK] Link copied (Ctrl+V to paste^). File saved.
 echo.
-echo  Next: run Web-Deploy.bat if web changed too.
+echo  Next: install the exe locally to test, or upload to GitHub to
+echo   let installed apps auto-update.
 echo.
 echo  Window stays open so you can copy. Press Enter when done...
 set /p DONE=Press Enter to close...

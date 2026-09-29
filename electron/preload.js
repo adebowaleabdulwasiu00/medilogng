@@ -28,4 +28,13 @@ contextBridge.exposeInMainWorld('medilog', {
     ipcRenderer.on('zoom-changed', listener);
     return () => ipcRenderer.removeListener('zoom-changed', listener);
   },
+  checkForUpdates: () => ipcRenderer.invoke('auto-check-updates'),
+  downloadUpdate: () => ipcRenderer.invoke('auto-download-update'),
+  quitAndInstall: () => ipcRenderer.invoke('auto-quit-install'),
+  getUpdateStatus: () => ipcRenderer.invoke('auto-get-status'),
+  onUpdateStatus: (cb) => {
+    const listener = (_e, status) => cb(status);
+    ipcRenderer.on('auto-update-status', listener);
+    return () => ipcRenderer.removeListener('auto-update-status', listener);
+  },
 });
